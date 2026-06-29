@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{{PATH}} v{{VERSION}} · Sanctum · HOLDFAST</title>
+  <style>{{CSS}}</style>
+</head>
+<body class="page-console">
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="brand" href="/" aria-label="HOLDFAST Sanctum">
+        <span class="brand__glyph" aria-hidden="true">{{SHIELD}}</span>
+        <span class="brand__word">HOLDFAST</span>
+      </a>
+      <div class="topbar__right">{{USERBOX}}</div>
+    </div>
+  </header>
+
+  <main class="console console--narrow">
+    <div class="console__head console__head--row">
+      <div>
+        <h1 class="secret-heading">{{PATH}}</h1>
+        <p class="sub">Version {{VERSION}} · created {{WHEN}} · by {{CREATED_BY}}</p>
+      </div>
+      <a class="btn btn-ghost btn-sm" href="/s/{{PATH_ENC}}">Back to secret</a>
+    </div>
+
+    <section class="card">
+      <div class="card__head"><h2>Value</h2><span class="badge badge--version">v{{VERSION}}</span></div>
+      <div class="card__body">
+        <div class="secret-reveal">
+          <code class="secret-value" id="secretValue" data-value="{{VALUE_ATTR}}" data-mask="{{MASK}}" data-shown="false">{{MASK}}</code>
+          <div class="reveal-actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="revealBtn">Reveal</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="copyBtn">Copy</button>
+          </div>
+        </div>
+        <p class="hint hint--muted">Revealing this historical version was recorded in the audit log.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+  (function () {
+    var el = document.getElementById('secretValue');
+    if (!el) return;
+    var revealBtn = document.getElementById('revealBtn');
+    var copyBtn = document.getElementById('copyBtn');
+    var mask = el.getAttribute('data-mask');
+    function value() { return el.getAttribute('data-value'); }
+    if (revealBtn) {
+      revealBtn.addEventListener('click', function () {
+        if (el.getAttribute('data-shown') !== 'true') {
+          el.textContent = value();
+          el.setAttribute('data-shown', 'true');
+          revealBtn.textContent = 'Hide';
+        } else {
+          el.textContent = mask;
+          el.setAttribute('data-shown', 'false');
+          revealBtn.textContent = 'Reveal';
+        }
+      });
+    }
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var v = value();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(v).then(function () {
+            copyBtn.textContent = 'Copied';
+            setTimeout(function () { copyBtn.textContent = 'Copy'; }, 1200);
+          });
+        }
+      });
+    }
+  })();
+  </script>
+</body>
+</html>

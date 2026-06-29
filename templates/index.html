@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Vault · Sanctum · HOLDFAST</title>
+  <style>{{CSS}}</style>
+</head>
+<body class="page-console">
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="brand" href="/" aria-label="HOLDFAST Sanctum">
+        <span class="brand__glyph" aria-hidden="true">{{SHIELD}}</span>
+        <span class="brand__word">HOLDFAST</span>
+      </a>
+      <div class="topbar__right">{{USERBOX}}</div>
+    </div>
+  </header>
+
+  <main class="console">
+    <div class="console__head">
+      <h1>Secrets vault</h1>
+      <p class="sub">Store secrets encrypted at rest with AES-256-GCM. The list never shows values — open a secret to reveal it (revealing is recorded in the audit log).</p>
+    </div>
+
+    <div class="layout">
+      <section class="reading">
+        <div class="card">
+          <div class="card__head"><h2>Secrets</h2><span class="muted">{{COUNT}}</span></div>
+          <ul class="secret-list">
+            {{LIST}}
+          </ul>
+        </div>
+      </section>
+
+      <aside class="rail">
+        <section class="card">
+          <div class="card__head"><h2>New secret</h2></div>
+          <div class="card__body">
+            <form method="post" action="/" class="save-form">
+              <input type="hidden" name="csrf_token" value="{{CSRF}}">
+              <div class="field">
+                <label for="path">Path</label>
+                <input type="text" id="path" name="path" autocomplete="off" spellcheck="false"
+                       placeholder="db/prod/password" required>
+              </div>
+              <div class="field">
+                <label for="value">Value</label>
+                <textarea id="value" name="value" rows="3" autocomplete="off" spellcheck="false"
+                          placeholder="the secret value" required></textarea>
+              </div>
+              <div class="actions">
+                <button class="btn btn-primary" type="submit">Store secret</button>
+              </div>
+            </form>
+            <p class="hint hint--muted">Values are encrypted with AES-256-GCM (per-secret random nonce) before they touch the database. Putting an existing path adds a new version.</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
