@@ -1,0 +1,54 @@
+[package]
+name = "sanctum"
+version = "0.1.0"
+edition = "2021"
+description = "Sanctum — personal secrets vault for the HOLDFAST stack (SSO-gated management UI + an internal transit API; values AES-256-GCM at rest)."
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "sanctum"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sanctum"
+path = "src/main.rs"
+
+[dependencies]
+# HTTP framework (shared with keystone/magpie/pastefire): Form/State/Path/Json extractors,
+# typed responses, server-rendered HTML.
+axum = "0.8"
+# Async runtime axum runs on. The Store trait is async: handlers `.await` it directly and
+# PgStore drives sqlx natively, so a worker thread is NEVER blocked (no block_in_place, no
+# sync-over-async bridge). The audit emitter also `tokio::spawn`s its background worker.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "net", "io-util", "time"] }
+# Erase the async Store trait methods so `Arc<dyn Store>` stays object-safe (same seam as the
+# rest of the estate; a fresh InMemoryStore drops in for tests).
+async-trait = "0.1"
+# Deserialize the HTML form bodies + the transit JSON request/response envelopes.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Ergonomic error enums.
+thiserror = "2"
+# Structured logging.
+tracing = "0.1"
+tracing-subscriber = "0.3"
+# Epoch -> UTC components for the "updated" timestamps (std only — no extra C deps).
+time = { version = "0.3", default-features = false, features = ["std"] }
+# CSPRNG (OsRng) for the random AES-GCM nonces + the double-submit CSRF token. rand 0.8 lineage
+# matches the rest of the estate (keystone/magpie).
+rand = "0.8"
+# AES-256-GCM authenticated encryption of secret VALUES at rest. Pure-Rust RustCrypto provider
+# (no OpenSSL, no aws-lc C toolchain) — same crypto posture as the rest of the estate.
+aes-gcm = "0.10"
+# Key derivation from MASTER_KEY (SHA-256 of a domain-separated context || master) + base64 for
+# the on-disk nonce||ciphertext blob. base64 0.22 matches keystone/corvid.
+sha2 = "0.10"
+base64 = "0.22"
+# Portable PostgreSQL data layer. Runtime queries only (sqlx::query/Row) — NO compile-time
+# macros, so the build needs NO database. rustls TLS (ring) — no openssl. The same standard SQL
+# later runs unchanged on FusionDB over pgwire.
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+
+[dev-dependencies]
+# ServiceExt::oneshot drives the Router in-process for the end-to-end tests (no port bind).
+tower = { version = "0.5", features = ["util"] }
