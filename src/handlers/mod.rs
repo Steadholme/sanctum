@@ -48,13 +48,39 @@ pub fn fmt_ts(secs: i64) -> String {
 /// The right side of the app-bar: a page title, the signed-in email (when known), and the
 /// cross-subdomain logout link. Shared by every page so the chrome stays identical.
 pub fn userbox(title: &str, email: Option<&str>) -> String {
-    let email_span = match email {
-        Some(e) if !e.is_empty() => format!("<span class=\"user-email\">{}</span>", esc(e)),
-        _ => String::new(),
+    // An "All apps" pill links back to the apex portal; a user chip (avatar initial + email)
+    // and the cross-subdomain logout complete the shared app-bar chrome.
+    let (chip, _initial) = match email {
+        Some(e) if !e.is_empty() => {
+            let initial = e
+                .chars()
+                .next()
+                .map(|c| c.to_uppercase().to_string())
+                .unwrap_or_else(|| "H".to_string());
+            (
+                format!(
+                    "<span class=\"userchip\"><span class=\"userchip__avatar\" aria-hidden=\"true\">{}</span><span class=\"user-email\">{}</span></span>",
+                    esc(&initial),
+                    esc(e),
+                ),
+                initial,
+            )
+        }
+        _ => (String::new(), "H".to_string()),
     };
     format!(
-        "<span class=\"topbar__title\">{title}</span>{email_span}<a class=\"btn btn-ghost btn-sm\" href=\"{LOGOUT_URL}\">Log out</a>",
+        concat!(
+            "<span class=\"topbar__title\">{title}</span>",
+            "<a class=\"allapps\" href=\"https://w33d.xyz\" title=\"All apps\">",
+            "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">",
+            "<rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/>",
+            "<rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/></svg>All apps</a>",
+            "{chip}",
+            "<a class=\"btn btn-ghost btn-sm\" href=\"{LOGOUT_URL}\">Log out</a>",
+        ),
         title = esc(title),
+        chip = chip,
+        LOGOUT_URL = LOGOUT_URL,
     )
 }
 
