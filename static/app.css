@@ -178,3 +178,26 @@ tbody tr:hover { background: var(--surface-2); }
 .notice-down { background: var(--down-soft); border-color: var(--down-border); color: var(--down-ink); }
 hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 ::selection { background: var(--accent-soft); }
+
+/* -------------------------------------------------------------- vault specifics */
+.secret-main, .version-main { min-width: 0; flex: 1 1 auto; display: grid; gap: 4px; }
+.secret-path { font-family: var(--mono); font-size: 13.5px; font-weight: 550; color: var(--ink); overflow-wrap: anywhere; }
+.secret-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--ink-3); font-size: 12.5px; }
+.secret-mask { margin-left: auto; color: var(--ink-3); letter-spacing: 2px; font-family: var(--mono); }
+.secret-heading { overflow-wrap: anywhere; }
+.secret-reveal { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; }
+.secret-value { min-height: 42px; display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reveal-actions, .inline-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.version-list { list-style: none; margin: 0; padding: 0; }
+.version-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.version-item + .version-item { border-top: 1px solid var(--border); }
+.version-item--empty { color: var(--ink-3); font-size: 13px; }
+.version-when { color: var(--ink-3); font-size: 12.5px; }
+.version-by { color: var(--ink-2); font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
+.inline-form { margin: 0; display: inline-flex; }
+.policy-list { margin-top: 18px; }
+.lifecycle-summary { margin-bottom: 18px; color: var(--ink-2); font-size: 13px; display: flex; flex-wrap: wrap; gap: 7px; }
+@media (max-width: 640px) {
+  .secret-reveal { grid-template-columns: 1fr; }
+  .secret-mask { display: none; }
+}

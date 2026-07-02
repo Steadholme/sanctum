@@ -9,10 +9,14 @@
 //! - `GET  /healthz`               — liveness (public)
 //! - `GET  /`                      — list secret paths + latest versions (NO values)
 //! - `POST /`                      — create/update a secret (path + value) -> 302 detail (CSRF)
+//! - `POST /policies`              — add/update a read policy (CSRF)
+//! - `POST /policies/delete`       — remove a read policy (CSRF)
 //! - `GET  /s/{path}`              — reveal the latest value (AUDITED) + version history
 //! - `POST /s/{path}`              — put a new version -> 302 detail (CSRF)
+//! - `POST /s/{path}/lifecycle`    — set expiry / rotation reminders (CSRF)
 //! - `POST /s/{path}/delete`       — delete the path + all versions -> 302 `/` (CSRF)
 //! - `GET  /s/{path}/v/{version}`  — reveal a specific historical version (AUDITED)
+//! - `POST /s/{path}/v/{version}/rollback` — copy that version to a new latest version (CSRF)
 //! - `POST /transit/encrypt`       — seal a payload under a named transit key (token OR SSO)
 //! - `POST /transit/decrypt`       — open a `sanctum:v1:...` token (token OR SSO)
 //!
@@ -62,12 +66,22 @@ pub fn app(state: AppState) -> Router {
             "/",
             get(handlers::secrets::index).post(handlers::secrets::create),
         )
+        .route("/policies", post(handlers::secrets::add_policy))
+        .route("/policies/delete", post(handlers::secrets::delete_policy))
         .route(
             "/s/{path}",
             get(handlers::secrets::reveal).post(handlers::secrets::put),
         )
+        .route("/s/{path}/lifecycle", post(handlers::secrets::lifecycle))
         .route("/s/{path}/delete", post(handlers::secrets::delete))
-        .route("/s/{path}/v/{version}", get(handlers::secrets::reveal_version))
+        .route(
+            "/s/{path}/v/{version}",
+            get(handlers::secrets::reveal_version),
+        )
+        .route(
+            "/s/{path}/v/{version}/rollback",
+            post(handlers::secrets::rollback),
+        )
         .route("/transit/encrypt", post(handlers::transit::encrypt))
         .route("/transit/decrypt", post(handlers::transit::decrypt))
         .with_state(state)
@@ -121,7 +135,11 @@ pub async fn build_state_from_env() -> Result<AppState, String> {
             Arc::new(pg)
         }
         "memory" => Arc::new(InMemoryStore::new()),
-        other => return Err(format!("unknown SANCTUM_STORE={other} (use memory|postgres)")),
+        other => {
+            return Err(format!(
+                "unknown SANCTUM_STORE={other} (use memory|postgres)"
+            ))
+        }
     };
 
     let cipher = match master {

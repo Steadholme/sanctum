@@ -94,7 +94,9 @@ impl Cipher {
 
     /// Open a `base64(nonce || ciphertext+tag)` blob under `context`.
     fn open(&self, context: &str, blob_b64: &str) -> Result<Vec<u8>, CryptoError> {
-        let blob = B64.decode(blob_b64.trim()).map_err(|_| CryptoError::Malformed)?;
+        let blob = B64
+            .decode(blob_b64.trim())
+            .map_err(|_| CryptoError::Malformed)?;
         if blob.len() < NONCE_LEN + TAG_LEN {
             return Err(CryptoError::Malformed);
         }
@@ -204,7 +206,9 @@ mod tests {
     #[test]
     fn transit_round_trips_and_is_self_describing() {
         let c = Cipher::new("master");
-        let token = c.transit_encrypt("default", "service-to-service payload").unwrap();
+        let token = c
+            .transit_encrypt("default", "service-to-service payload")
+            .unwrap();
         assert!(token.starts_with("sanctum:v1:default:"));
         assert_eq!(
             c.transit_decrypt(&token).unwrap(),

@@ -62,7 +62,9 @@ fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
 /// Parse a `Authorization: Bearer <token>` header, returning the token.
 pub fn bearer_token(headers: &HeaderMap) -> Option<String> {
     let raw = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
-    let token = raw.strip_prefix("Bearer ").or_else(|| raw.strip_prefix("bearer "))?;
+    let token = raw
+        .strip_prefix("Bearer ")
+        .or_else(|| raw.strip_prefix("bearer "))?;
     let token = token.trim();
     (!token.is_empty()).then(|| token.to_string())
 }
@@ -177,11 +179,17 @@ mod tests {
         // No SSO header, no token -> denied.
         assert!(!transit_authorized(&h, Some("s3cr3t")));
         // Wrong bearer -> denied.
-        h.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer nope"));
+        h.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer nope"),
+        );
         assert!(!transit_authorized(&h, Some("s3cr3t")));
         // Right bearer -> allowed.
         let mut h2 = HeaderMap::new();
-        h2.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer s3cr3t"));
+        h2.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer s3cr3t"),
+        );
         assert!(transit_authorized(&h2, Some("s3cr3t")));
     }
 

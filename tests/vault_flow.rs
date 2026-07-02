@@ -73,7 +73,9 @@ async fn send(app: &axum::Router, req: Request<Body>) -> Resp {
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let headers = res.headers().clone();
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     Resp {
         status,
         headers,
@@ -151,7 +153,11 @@ async fn create_reveal_version_delete_lifecycle() {
         &app,
         post_form(
             "/",
-            &[("csrf_token", &csrf), ("path", path), ("value", "v1-secret")],
+            &[
+                ("csrf_token", &csrf),
+                ("path", path),
+                ("value", "v1-secret"),
+            ],
             &csrf,
             Some("alice"),
         ),
@@ -164,7 +170,10 @@ async fn create_reveal_version_delete_lifecycle() {
     let list = send(&app, get("/", Some("alice"))).await;
     assert!(list.body.contains("db/prod/password"));
     assert!(list.body.contains("v1"));
-    assert!(!list.body.contains("v1-secret"), "the list must not leak the value");
+    assert!(
+        !list.body.contains("v1-secret"),
+        "the list must not leak the value"
+    );
 
     // GET /s/{path} reveals the latest value (in the data-value attribute, masked in the body).
     let reveal = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
@@ -192,6 +201,46 @@ async fn create_reveal_version_delete_lifecycle() {
     assert!(reveal2.body.contains("data-value=\"v2-secret\""));
     assert!(reveal2.body.contains(&format!("/s/{enc_path}/v/1")));
     assert!(reveal2.body.contains(&format!("/s/{enc_path}/v/2")));
+    let csrf3 = reveal2.csrf_cookie().unwrap();
+
+    // Lifecycle metadata is additive: expiry/rotation reminders show on the list but never values.
+    let lifecycle = send(
+        &app,
+        post_form(
+            &format!("/s/{enc_path}/lifecycle"),
+            &[
+                ("csrf_token", &csrf3),
+                ("expires_in_days", "1"),
+                ("rotation_in_days", "2"),
+                ("rotation_state", "rotation_due"),
+            ],
+            &csrf3,
+            Some("alice"),
+        ),
+    )
+    .await;
+    assert_eq!(lifecycle.status, StatusCode::FOUND);
+    let list_due = send(&app, get("/", Some("alice"))).await;
+    assert!(list_due.body.contains("Expiry &amp; rotation"));
+    assert!(list_due.body.contains("rotation due"));
+    assert!(list_due.body.contains("db/prod/password"));
+
+    // Rollback copies v1 into a new latest version without deleting history.
+    let rollback = send(
+        &app,
+        post_form(
+            &format!("/s/{enc_path}/v/1/rollback"),
+            &[("csrf_token", &csrf3)],
+            &csrf3,
+            Some("alice"),
+        ),
+    )
+    .await;
+    assert_eq!(rollback.status, StatusCode::FOUND);
+    assert_eq!(rollback.location(), format!("/s/{enc_path}"));
+    let reveal3 = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
+    assert!(reveal3.body.contains("data-value=\"v1-secret\""));
+    assert!(reveal3.body.contains("Version 3"));
 
     // Reveal a specific historical version (v1).
     let v1 = send(&app, get(&format!("/s/{enc_path}/v/1"), Some("alice"))).await;
@@ -199,13 +248,13 @@ async fn create_reveal_version_delete_lifecycle() {
     assert!(v1.body.contains("data-value=\"v1-secret\""));
 
     // Delete the secret -> 302 /, then it is gone everywhere.
-    let csrf3 = reveal2.csrf_cookie().unwrap();
+    let csrf4 = reveal3.csrf_cookie().unwrap();
     let del = send(
         &app,
         post_form(
             &format!("/s/{enc_path}/delete"),
-            &[("csrf_token", &csrf3)],
-            &csrf3,
+            &[("csrf_token", &csrf4)],
+            &csrf4,
             Some("alice"),
         ),
     )
@@ -235,7 +284,9 @@ async fn value_with_html_is_escaped_in_data_attribute() {
 
     let reveal = send(&app, get("/s/xss", Some("alice"))).await;
     // The raw value is escaped inside the data-value attribute, never emitted as live markup.
-    assert!(reveal.body.contains("data-value=\"&lt;script&gt;alert(&#x27;pwn&#x27;)&lt;/script&gt;\""));
+    assert!(reveal
+        .body
+        .contains("data-value=\"&lt;script&gt;alert(&#x27;pwn&#x27;)&lt;/script&gt;\""));
     assert!(!reveal.body.contains("<script>alert('pwn')</script>"));
 }
 
@@ -278,6 +329,71 @@ async fn invalid_paths_are_rejected() {
         .await;
         assert_eq!(r.status, StatusCode::BAD_REQUEST, "should reject {bad:?}");
     }
+}
+
+#[tokio::test]
+async fn read_policies_filter_list_and_reject_reveal() {
+    let app = app(state());
+    let path = "db/prod/password";
+    let enc_path = enc(path);
+
+    let home = send(&app, get("/", Some("alice"))).await;
+    let csrf = home.csrf_cookie().unwrap();
+    send(
+        &app,
+        post_form(
+            "/",
+            &[("csrf_token", &csrf), ("path", path), ("value", "secret")],
+            &csrf,
+            Some("alice"),
+        ),
+    )
+    .await;
+
+    let added = send(
+        &app,
+        post_form(
+            "/policies",
+            &[
+                ("csrf_token", &csrf),
+                ("subject", "alice"),
+                ("path_prefix", "db/prod"),
+            ],
+            &csrf,
+            Some("alice"),
+        ),
+    )
+    .await;
+    assert_eq!(added.status, StatusCode::FOUND);
+
+    let alice_list = send(&app, get("/", Some("alice"))).await;
+    assert!(alice_list.body.contains(&format!("href=\"/s/{enc_path}\"")));
+    assert!(alice_list.body.contains("Read policies"));
+    assert!(alice_list.body.contains("db/prod"));
+
+    let bob_list = send(&app, get("/", Some("bob"))).await;
+    assert!(!bob_list.body.contains(&format!("href=\"/s/{enc_path}\"")));
+    let bob_reveal = send(&app, get(&format!("/s/{enc_path}"), Some("bob"))).await;
+    assert_eq!(bob_reveal.status, StatusCode::FORBIDDEN);
+
+    let csrf2 = alice_list.csrf_cookie().unwrap();
+    let removed = send(
+        &app,
+        post_form(
+            "/policies/delete",
+            &[
+                ("csrf_token", &csrf2),
+                ("subject", "alice"),
+                ("path_prefix", "db/prod"),
+            ],
+            &csrf2,
+            Some("alice"),
+        ),
+    )
+    .await;
+    assert_eq!(removed.status, StatusCode::FOUND);
+    let bob_after_remove = send(&app, get(&format!("/s/{enc_path}"), Some("bob"))).await;
+    assert_eq!(bob_after_remove.status, StatusCode::OK);
 }
 
 #[tokio::test]
@@ -330,7 +446,12 @@ async fn transit_requires_authorization() {
 
     let wrong = send(
         &app,
-        post_json("/transit/encrypt", r#"{"plaintext":"x"}"#, Some("nope"), None),
+        post_json(
+            "/transit/encrypt",
+            r#"{"plaintext":"x"}"#,
+            Some("nope"),
+            None,
+        ),
     )
     .await;
     assert_eq!(wrong.status, StatusCode::UNAUTHORIZED);
@@ -338,7 +459,12 @@ async fn transit_requires_authorization() {
     // A gateway-injected SSO identity authorizes too (admin testing through Sluice).
     let sso = send(
         &app,
-        post_json("/transit/encrypt", r#"{"plaintext":"x"}"#, None, Some("admin")),
+        post_json(
+            "/transit/encrypt",
+            r#"{"plaintext":"x"}"#,
+            None,
+            Some("admin"),
+        ),
     )
     .await;
     assert_eq!(sso.status, StatusCode::OK);

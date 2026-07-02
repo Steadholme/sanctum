@@ -63,6 +63,8 @@ impl From<crate::store::StoreError> for AppError {
 /// key, corruption, or tampering). The coarse message never reveals which.
 impl From<crate::crypto::CryptoError> for AppError {
     fn from(_e: crate::crypto::CryptoError) -> Self {
-        AppError::Internal("This secret could not be decrypted with the current master key.".to_string())
+        AppError::Internal(
+            "This secret could not be decrypted with the current master key.".to_string(),
+        )
     }
 }

@@ -1,8 +1,11 @@
-//! Core domain types: a stored secret version, its metadata, and a value-free history row.
+//! Core domain types: stored secret versions, metadata, lifecycle hints, read policies, and
+//! value-free history rows.
 //!
 //! Field order/types mirror the agreed schema (db `sanctum`):
 //!   secrets(path, version, ciphertext, created_at, created_by, PRIMARY KEY(path, version))
 //!   secret_meta(path PRIMARY KEY, latest_version, updated_at)
+//!   secret_lifecycle(path PRIMARY KEY, expires_at, rotation_due_at, rotation_state, ...)
+//!   secret_read_policies(subject, path_prefix, ..., PRIMARY KEY(subject, path_prefix))
 //!
 //! `ciphertext` is ALWAYS the `base64(nonce || AES-256-GCM(value))` blob — the plaintext value is
 //! never represented in any of these structs.
@@ -36,6 +39,29 @@ pub struct SecretMeta {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VersionInfo {
     pub version: i64,
+    pub created_at: i64,
+    pub created_by: String,
+}
+
+/// Optional lifecycle controls for a secret path. Missing rows mean "no expiry and no rotation
+/// reminder"; the secret remains fully valid.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SecretLifecycle {
+    pub path: String,
+    pub expires_at: Option<i64>,
+    pub rotation_due_at: Option<i64>,
+    pub rotation_state: String,
+    pub updated_at: i64,
+    pub updated_by: String,
+}
+
+/// One additive read policy: `subject` may read secrets whose path is matched by `path_prefix`.
+/// A special prefix `*` means every path. When no policies exist at all, legacy all-admin access
+/// remains in force; once any policy exists, reads require a matching policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SecretReadPolicy {
+    pub subject: String,
+    pub path_prefix: String,
     pub created_at: i64,
     pub created_by: String,
 }

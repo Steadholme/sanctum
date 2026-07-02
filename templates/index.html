@@ -32,6 +32,15 @@
             {{LIST}}
           </ul>
         </div>
+
+        <div class="card">
+          <div class="card__head"><h2>Expiry &amp; rotation</h2><span class="muted">next 14 days</span></div>
+          <div class="card__body">
+            <ul class="version-list">
+              {{DUE_LIST}}
+            </ul>
+          </div>
+        </div>
       </section>
 
       <aside class="rail">
@@ -55,6 +64,31 @@
               </div>
             </form>
             <p class="hint hint--muted">Values are encrypted with AES-256-GCM (per-secret random nonce) before they touch the database. Putting an existing path adds a new version.</p>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card__head"><h2>Read policies</h2></div>
+          <div class="card__body">
+            <form method="post" action="/policies" class="save-form">
+              <input type="hidden" name="csrf_token" value="{{CSRF}}">
+              <div class="field">
+                <label for="policy-subject">Subject</label>
+                <input type="text" id="policy-subject" name="subject" autocomplete="off" spellcheck="false"
+                       placeholder="alice" required>
+              </div>
+              <div class="field">
+                <label for="policy-prefix">Path prefix</label>
+                <input type="text" id="policy-prefix" name="path_prefix" autocomplete="off" spellcheck="false"
+                       placeholder="db/prod or *" required>
+              </div>
+              <div class="actions">
+                <button class="btn btn-secondary" type="submit">Save policy</button>
+              </div>
+            </form>
+            <ul class="version-list policy-list">
+              {{POLICIES}}
+            </ul>
           </div>
         </section>
       </aside>
