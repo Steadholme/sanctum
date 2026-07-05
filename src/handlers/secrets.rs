@@ -22,7 +22,7 @@ use crate::audit::AuditEvent;
 use crate::auth::{self, Identity};
 use crate::config::{MAX_PATH_CHARS, MAX_VALUE_CHARS};
 use crate::error::AppError;
-use crate::handlers::{esc, fmt_ts, pct_encode, userbox, APP_CSS, SHIELD_SVG};
+use crate::handlers::{app_css, esc, fmt_ts, pct_encode, userbox, SHIELD_SVG};
 use crate::model::{SecretLifecycle, SecretMeta, SecretReadPolicy, SecretVersion, VersionInfo};
 use crate::{now_secs, AppState};
 
@@ -605,7 +605,7 @@ fn render_index(
         n => format!("{n} secrets"),
     };
     INDEX_HTML
-        .replace("{{CSS}}", APP_CSS)
+        .replace("{{CSS}}", app_css())
         .replace("{{SHIELD}}", SHIELD_SVG)
         .replace("{{USERBOX}}", &userbox("Vault", Some(&who.email)))
         .replace("{{CSRF}}", &esc(csrf))
@@ -798,7 +798,7 @@ fn render_detail(
 ) -> String {
     let enc = pct_encode(path);
     SECRET_HTML
-        .replace("{{CSS}}", APP_CSS)
+        .replace("{{CSS}}", app_css())
         .replace("{{SHIELD}}", SHIELD_SVG)
         .replace("{{USERBOX}}", &userbox("Vault", Some(&who.email)))
         .replace("{{CSRF}}", &esc(csrf))
@@ -883,7 +883,7 @@ fn render_reveal_version(
 ) -> String {
     let enc = pct_encode(path);
     REVEAL_HTML
-        .replace("{{CSS}}", APP_CSS)
+        .replace("{{CSS}}", app_css())
         .replace("{{SHIELD}}", SHIELD_SVG)
         .replace("{{USERBOX}}", &userbox("Vault", Some(&who.email)))
         .replace("{{PATH_ENC}}", &esc(&enc))

@@ -14,6 +14,8 @@ name = "sanctum"
 path = "src/main.rs"
 
 [dependencies]
+# Vendored Odyssey canonical CSS (font + tokens + shared components) for server-rendered pages.
+odyssey = { path = "crates/odyssey" }
 # HTTP framework (shared with keystone/magpie/pastefire): Form/State/Path/Json extractors,
 # typed responses, server-rendered HTML.
 axum = "0.8"

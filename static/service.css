@@ -1,0 +1,73 @@
+/* Sanctum service surface, layered after Odyssey canonical CSS. */
+
+/* Top-bar right-side helpers rendered by Sanctum's userbox(). */
+.allapps {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface);
+  font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+}
+.allapps:hover { background: var(--bg-2); color: var(--ink); }
+.allapps svg { width: 14px; height: 14px; opacity: .8; }
+.userchip { display: inline-flex; align-items: center; gap: 8px; padding-left: 4px; }
+.userchip__avatar {
+  width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff; font-weight: 600; font-size: 12px;
+}
+.user-email { font-size: 13px; color: var(--ink-2); font-weight: 500; }
+@media (max-width: 640px) { .user-email, .topbar__title { display: none; } }
+
+/* Card stacking + split head (Odyssey .card__head is a plain left-aligned flex row;
+   Sanctum heads pair a title with a right-aligned meta chip / version badge). */
+.card + .card { margin-top: 20px; }
+.card__head { justify-content: space-between; }
+.hint--muted { color: var(--ink-3); margin: 16px 0 0; }
+
+/* Two-column reading/rail children keep min-width:0 so long secret paths/values don't
+   blow out the grid tracks. */
+.reading, .rail { min-width: 0; }
+
+/* Generic lists (secret list + policy rows). */
+.secret-list, .list { list-style: none; margin: 0; padding: 8px; }
+.secret-list > li, .list > li { display: flex; align-items: center; gap: 14px; padding: 13px 14px; border-radius: 8px; transition: background .1s; }
+.secret-list > li:hover, .list > li:hover { background: var(--surface-2); }
+.secret-list > li + li, .list > li + li { border-top: 1px solid var(--border); }
+.secret-list .path, .list .title { font-family: var(--mono); font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.list__meta { color: var(--ink-3); font-size: 12.5px; }
+.spacer { margin-left: auto; }
+.mask { color: var(--ink-3); letter-spacing: 2px; font-family: var(--mono); }
+.ver { font-family: var(--mono); font-size: 11.5px; }
+
+/* Code block + inline notices. */
+.code { font-family: var(--mono); font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; overflow: auto; line-height: 1.55; }
+.notice { padding: 12px 16px; border-radius: var(--radius-sm); font-size: 13.5px; border: 1px solid var(--border); background: var(--surface-2); }
+.notice-ok { background: var(--ok-soft); border-color: var(--ok-border); color: var(--ok-ink); }
+.notice-warn { background: var(--warn-soft); border-color: var(--warn-border); color: var(--warn-ink); }
+.notice-down { background: var(--down-soft); border-color: var(--down-border); color: var(--down-ink); }
+
+/* Text/link button variant (accent, no chrome). */
+.btn-link { background: transparent; color: var(--accent-2); padding: 6px 8px; }
+.btn-link:hover { color: var(--accent); }
+
+/* Vault specifics. */
+.secret-main, .version-main { min-width: 0; flex: 1 1 auto; display: grid; gap: 4px; }
+.secret-path { font-family: var(--mono); font-size: 13.5px; font-weight: 550; color: var(--ink); overflow-wrap: anywhere; }
+.secret-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--ink-3); font-size: 12.5px; }
+.secret-mask { margin-left: auto; color: var(--ink-3); letter-spacing: 2px; font-family: var(--mono); }
+.secret-heading { overflow-wrap: anywhere; }
+.secret-reveal { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; }
+.secret-value { min-height: 42px; display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reveal-actions, .inline-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.version-list { list-style: none; margin: 0; padding: 0; }
+.version-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.version-item + .version-item { border-top: 1px solid var(--border); }
+.version-item--empty { color: var(--ink-3); font-size: 13px; }
+.version-when { color: var(--ink-3); font-size: 12.5px; }
+.version-by { color: var(--ink-2); font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
+.inline-form { margin: 0; display: inline-flex; }
+.policy-list { margin-top: 18px; }
+.lifecycle-summary { margin-bottom: 18px; color: var(--ink-2); font-size: 13px; display: flex; flex-wrap: wrap; gap: 7px; }
+@media (max-width: 640px) {
+  .secret-reveal { grid-template-columns: 1fr; }
+  .secret-mask { display: none; }
+}
