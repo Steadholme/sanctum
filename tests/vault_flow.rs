@@ -133,6 +133,68 @@ fn post_json(path: &str, json: &str, bearer: Option<&str>, subject: Option<&str>
     b.body(Body::from(json.to_string())).unwrap()
 }
 
+async fn create_secret_and_get_csrf(
+    app: &axum::Router,
+    subject: &str,
+    path: &str,
+    value: &str,
+) -> (String, String) {
+    let enc_path = enc(path);
+    let home = send(app, get("/", Some(subject))).await;
+    assert_eq!(home.status, StatusCode::OK);
+    let csrf = home.csrf_cookie().expect("csrf on GET /");
+    let created = send(
+        app,
+        post_form(
+            "/",
+            &[("csrf_token", &csrf), ("path", path), ("value", value)],
+            &csrf,
+            Some(subject),
+        ),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::FOUND);
+    assert_eq!(created.location(), format!("/s/{enc_path}"));
+
+    let reveal = send(app, get(&format!("/s/{enc_path}"), Some(subject))).await;
+    assert_eq!(reveal.status, StatusCode::OK);
+    let csrf = reveal.csrf_cookie().expect("csrf on reveal");
+    (enc_path, csrf)
+}
+
+async fn set_expiry_days(
+    app: &axum::Router,
+    subject: &str,
+    enc_path: &str,
+    csrf: &str,
+    days: &str,
+) -> Resp {
+    send(
+        app,
+        post_form(
+            &format!("/s/{enc_path}/lifecycle"),
+            &[
+                ("csrf_token", csrf),
+                ("expires_in_days", days),
+                ("rotation_in_days", ""),
+                ("rotation_state", "active"),
+            ],
+            csrf,
+            Some(subject),
+        ),
+    )
+    .await
+}
+
+fn assert_no_plaintext(resp: &Resp, values: &[&str]) {
+    for value in values {
+        assert!(
+            !resp.body.contains(value),
+            "blocked response leaked plaintext {value:?}"
+        );
+    }
+}
+
 // ---- tests ----------------------------------------------------------------
 
 #[tokio::test]
@@ -263,6 +325,123 @@ async fn create_reveal_version_delete_lifecycle() {
     assert_eq!(del.location(), "/");
     let gone = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
     assert_eq!(gone.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn expired_latest_reveal_withholds_value() {
+    let app = app(state());
+    let (enc_path, csrf) =
+        create_secret_and_get_csrf(&app, "alice", "expired/latest", "hunter2").await;
+
+    let lifecycle = set_expiry_days(&app, "alice", &enc_path, &csrf, "0").await;
+    assert_eq!(lifecycle.status, StatusCode::FOUND);
+
+    let blocked = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
+    assert_eq!(blocked.status, StatusCode::OK);
+    assert!(blocked.body.contains("expired"));
+    assert_no_plaintext(&blocked, &["hunter2"]);
+    assert!(!blocked.body.contains("data-value="));
+    assert!(!blocked.body.contains("id=\"secretValue\""));
+    assert!(blocked.body.contains("Add a new version"));
+    assert!(blocked.body.contains("Save lifecycle"));
+    assert!(blocked
+        .body
+        .contains(&format!("action=\"/s/{enc_path}/lifecycle\"")));
+}
+
+#[tokio::test]
+async fn expired_blocks_every_historical_version() {
+    let app = app(state());
+    let (enc_path, csrf) =
+        create_secret_and_get_csrf(&app, "alice", "expired/history", "hunter2").await;
+
+    let put = send(
+        &app,
+        post_form(
+            &format!("/s/{enc_path}"),
+            &[("csrf_token", &csrf), ("value", "s3cr3t")],
+            &csrf,
+            Some("alice"),
+        ),
+    )
+    .await;
+    assert_eq!(put.status, StatusCode::FOUND);
+
+    let reveal = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
+    assert_eq!(reveal.status, StatusCode::OK);
+    let csrf = reveal.csrf_cookie().unwrap();
+    let lifecycle = set_expiry_days(&app, "alice", &enc_path, &csrf, "0").await;
+    assert_eq!(lifecycle.status, StatusCode::FOUND);
+
+    for version in [1, 2] {
+        let blocked = send(
+            &app,
+            get(&format!("/s/{enc_path}/v/{version}"), Some("alice")),
+        )
+        .await;
+        assert_eq!(blocked.status, StatusCode::FORBIDDEN);
+        assert!(blocked.body.contains("Secret expired"));
+        assert!(!blocked.body.contains("data-value="));
+        assert_no_plaintext(&blocked, &["hunter2", "s3cr3t"]);
+    }
+}
+
+#[tokio::test]
+async fn writes_stay_open_and_recovery_restores() {
+    let app = app(state());
+    let (enc_path, csrf) =
+        create_secret_and_get_csrf(&app, "alice", "expired/recovery", "hunter2").await;
+
+    let lifecycle = set_expiry_days(&app, "alice", &enc_path, &csrf, "0").await;
+    assert_eq!(lifecycle.status, StatusCode::FOUND);
+    let expired = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
+    assert_eq!(expired.status, StatusCode::OK);
+    assert_no_plaintext(&expired, &["hunter2"]);
+    let recovery_csrf = expired.csrf_cookie().unwrap();
+
+    let put = send(
+        &app,
+        post_form(
+            &format!("/s/{enc_path}"),
+            &[("csrf_token", &recovery_csrf), ("value", "restored")],
+            &recovery_csrf,
+            Some("alice"),
+        ),
+    )
+    .await;
+    assert_eq!(put.status, StatusCode::FOUND);
+
+    let extend = set_expiry_days(&app, "alice", &enc_path, &recovery_csrf, "3650").await;
+    assert_eq!(extend.status, StatusCode::FOUND);
+
+    let reveal = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
+    assert_eq!(reveal.status, StatusCode::OK);
+    assert!(reveal.body.contains("data-value=\"restored\""));
+}
+
+#[tokio::test]
+async fn future_expiry_reveal_unaffected() {
+    let app = app(state());
+    let (enc_path, csrf) =
+        create_secret_and_get_csrf(&app, "alice", "expiry/future", "future-secret").await;
+
+    let lifecycle = set_expiry_days(&app, "alice", &enc_path, &csrf, "3650").await;
+    assert_eq!(lifecycle.status, StatusCode::FOUND);
+
+    let reveal = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
+    assert_eq!(reveal.status, StatusCode::OK);
+    assert!(reveal.body.contains("data-value=\"future-secret\""));
+}
+
+#[tokio::test]
+async fn no_lifecycle_reveal_unaffected() {
+    let app = app(state());
+    let (enc_path, _csrf) =
+        create_secret_and_get_csrf(&app, "alice", "expiry/none", "plain-secret").await;
+
+    let reveal = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
+    assert_eq!(reveal.status, StatusCode::OK);
+    assert!(reveal.body.contains("data-value=\"plain-secret\""));
 }
 
 #[tokio::test]

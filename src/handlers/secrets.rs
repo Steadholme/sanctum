@@ -180,6 +180,31 @@ pub async fn reveal(
             ))
         }
     };
+
+    let now = now_secs();
+    let lifecycle = state.store.get_lifecycle(&path).await?;
+    if is_expired(lifecycle.as_ref(), now) {
+        state.audit.emit(AuditEvent::warning(
+            "secret.read.expired",
+            &who.email,
+            &path,
+            &format!("v{}", latest.version),
+        ));
+        let history = state.store.list_versions(&path).await?;
+        let csrf = auth::new_csrf_token();
+        let html = render_detail(
+            &who,
+            &csrf,
+            &path,
+            &latest,
+            None,
+            &history,
+            lifecycle.as_ref(),
+            now,
+        );
+        return Ok(html_with_csrf(StatusCode::OK, html, &csrf));
+    }
+
     let value = state.cipher.open_secret(&latest.ciphertext)?;
 
     // Revealing a value is an explicit, sensitive action — record WHO/WHICH/WHEN (never the value).
@@ -191,17 +216,16 @@ pub async fn reveal(
     ));
 
     let history = state.store.list_versions(&path).await?;
-    let lifecycle = state.store.get_lifecycle(&path).await?;
     let csrf = auth::new_csrf_token();
     let html = render_detail(
         &who,
         &csrf,
         &path,
         &latest,
-        &value,
+        Some(value.as_str()),
         &history,
         lifecycle.as_ref(),
-        now_secs(),
+        now,
     );
     Ok(html_with_csrf(StatusCode::OK, html, &csrf))
 }
@@ -224,6 +248,31 @@ pub async fn reveal_version(
         Some(v) => v,
         None => return Err(AppError::NotFound("No such version.".to_string())),
     };
+    let now = now_secs();
+    let lifecycle = state.store.get_lifecycle(&path).await?;
+    if is_expired(lifecycle.as_ref(), now) {
+        state.audit.emit(AuditEvent::warning(
+            "secret.read.expired",
+            &who.email,
+            &path,
+            &format!("v{version}"),
+        ));
+        let when = lifecycle
+            .and_then(|l| l.expires_at)
+            .map(fmt_ts)
+            .unwrap_or_default();
+        let msg = format!(
+            "This secret expired on {when} and can no longer be revealed. Save a new version and clear or extend its expiry to restore access."
+        );
+        return Ok(crate::handlers::render_error(
+            StatusCode::FORBIDDEN,
+            "Secret expired",
+            &msg,
+            Some(&who.email),
+        )
+        .into_response());
+    }
+
     let value = state.cipher.open_secret(&row.ciphertext)?;
 
     state.audit.emit(AuditEvent::notice(
@@ -722,6 +771,13 @@ fn lifecycle_is_due_soon(lifecycle: &SecretLifecycle, now: i64) -> bool {
             .unwrap_or(false)
 }
 
+/// Fail-closed READ gate: an expired secret must not be decrypted or served. Uses the SAME
+/// inclusive `expires_at <= now` boundary as the expired badge (render_lifecycle_badges) so the
+/// UI badge and the enforcement gate can never disagree. None lifecycle / None expires_at => not expired.
+fn is_expired(lifecycle: Option<&SecretLifecycle>, now: i64) -> bool {
+    matches!(lifecycle, Some(lc) if lc.expires_at.map(|ts| ts <= now).unwrap_or(false))
+}
+
 fn next_due_at(lifecycle: &SecretLifecycle) -> Option<i64> {
     [lifecycle.expires_at, lifecycle.rotation_due_at]
         .into_iter()
@@ -791,12 +847,16 @@ fn render_detail(
     csrf: &str,
     path: &str,
     latest: &SecretVersion,
-    value: &str,
+    value: Option<&str>,
     history: &[VersionInfo],
     lifecycle: Option<&SecretLifecycle>,
     now: i64,
 ) -> String {
     let enc = pct_encode(path);
+    let value_block = match value {
+        Some(v) => render_value_block_live(v),
+        None => EXPIRED_VALUE_BLOCK.to_string(),
+    };
     SECRET_HTML
         .replace("{{CSS}}", app_css())
         .replace("{{SHIELD}}", SHIELD_SVG)
@@ -810,9 +870,8 @@ fn render_detail(
         .replace("{{CREATED_BY}}", &esc(&latest.created_by))
         .replace("{{VERSION_COUNT}}", &history.len().to_string())
         .replace("{{MASK}}", MASK)
-        // The plaintext lives ONLY in the data-value attribute (attribute-escaped); it is shown
-        // masked and unmasked client-side on click.
-        .replace("{{VALUE_ATTR}}", &esc(value))
+        // The plaintext exists only in the live value block after the expiry gate has passed.
+        .replace("{{VALUE_BLOCK}}", &value_block)
         .replace("{{LIFECYCLE_SUMMARY}}", &lifecycle_summary(lifecycle, now))
         .replace(
             "{{EXPIRES_DAYS}}",
@@ -839,6 +898,16 @@ fn render_detail(
             },
         )
         .replace("{{HISTORY}}", &render_history(path, history, csrf))
+}
+
+const EXPIRED_VALUE_BLOCK: &str = "<div class=\"secret-reveal\"><code class=\"secret-value\" aria-disabled=\"true\">Value withheld — this secret has expired</code></div><p class=\"hint hint--muted\">This secret has expired. Save a new version and clear or extend its expiry below to restore access.</p>";
+
+fn render_value_block_live(value: &str) -> String {
+    format!(
+        "<div class=\"secret-reveal\">\n          <code class=\"secret-value\" id=\"secretValue\" data-value=\"{value}\" data-mask=\"{mask}\" data-shown=\"false\">{mask}</code>\n          <div class=\"reveal-actions\">\n            <button type=\"button\" class=\"btn btn-secondary btn-sm\" id=\"revealBtn\">Reveal</button>\n            <button type=\"button\" class=\"btn btn-ghost btn-sm\" id=\"copyBtn\">Copy</button>\n          </div>\n        </div>\n        <p class=\"hint hint--muted\">This value was decrypted just now and revealing it was recorded in the audit log. It stays masked until you click Reveal.</p>",
+        value = esc(value),
+        mask = MASK,
+    )
 }
 
 fn render_history(path: &str, history: &[VersionInfo], csrf: &str) -> String {

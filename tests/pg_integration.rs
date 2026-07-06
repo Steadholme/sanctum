@@ -19,10 +19,43 @@
 
 use std::sync::Arc;
 
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use sanctum::audit::AuditSink;
+use sanctum::config::Config;
 use sanctum::crypto::Cipher;
 use sanctum::store::{PgStore, Store};
+use sanctum::{now_secs, AppState};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Row;
+use tower::ServiceExt;
+
+struct HttpResp {
+    status: StatusCode,
+    body: String,
+}
+
+async fn send(app: &axum::Router, req: Request<Body>) -> HttpResp {
+    let res = app.clone().oneshot(req).await.unwrap();
+    let status = res.status();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    HttpResp {
+        status,
+        body: String::from_utf8_lossy(&bytes).to_string(),
+    }
+}
+
+fn get(path: &str, subject: &str) -> Request<Body> {
+    Request::builder()
+        .method("GET")
+        .uri(path)
+        .header("x-auth-subject", subject)
+        .header("x-auth-email", format!("{subject}@w33d.xyz"))
+        .body(Body::empty())
+        .unwrap()
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn pg_store_full_integration() {
@@ -34,7 +67,7 @@ async fn pg_store_full_integration() {
         return;
     };
 
-    let cipher = Cipher::new("integration-master-key");
+    let cipher = Arc::new(Cipher::new("integration-master-key"));
 
     // --- connect / migrate (idempotent: run twice) -------------------------
     let pg = PgStore::connect(&url)
@@ -161,6 +194,32 @@ async fn pg_store_full_integration() {
     assert!(store.can_read_secret("alice", "db/prod/pw").await.unwrap());
     assert!(!store.can_read_secret("bob", "db/prod/pw").await.unwrap());
     assert_eq!(store.list_read_policies().await.unwrap().len(), 1);
+
+    assert!(store
+        .set_lifecycle(
+            "db/prod/pw",
+            Some(now_secs() - 1),
+            None,
+            "active",
+            "alice",
+            now + 50,
+        )
+        .await
+        .unwrap());
+    let router = sanctum::app(AppState {
+        config: Arc::new(Config::dev()),
+        store: Arc::clone(&store),
+        cipher: Arc::clone(&cipher),
+        audit: AuditSink::disabled(),
+    });
+    let expired = send(&router, get("/s/db%2Fprod%2Fpw", "alice")).await;
+    assert_eq!(expired.status, StatusCode::OK);
+    assert!(expired.body.contains("expired"));
+    assert!(!expired.body.contains("db-password-1"));
+    assert!(!expired.body.contains("db-password-2"));
+    assert!(!expired.body.contains("data-value="));
+    assert!(expired.body.contains("Add a new version"));
+    assert!(expired.body.contains("Save lifecycle"));
 
     // --- AT-REST INVARIANT: the ciphertext column never holds plaintext ----
     let row = sqlx::query("SELECT ciphertext FROM secrets WHERE path = $1 AND version = $2")
