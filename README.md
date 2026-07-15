@@ -1,12 +1,12 @@
 # Sanctum · 个人密钥保险库（Secrets Vault）
 
-Sanctum 是 HOLDFAST 主权基础设施中的**个人密钥保险库（secrets vault）**服务，部署于
+Sanctum 是 Steadholme 主权基础设施中的**个人密钥保险库（secrets vault）**服务，部署于
 `vault.w33d.xyz`，内部监听端口 `8990`。它由 Sluice 网关以 `auth=sso` 方式托管：网关完成 OIDC
 浏览器登录，剥离入站的 `X-Auth-*`，并注入经过校验的 `X-Auth-Subject` / `X-Auth-Email`。Sanctum
 自身**不做任何登录**，它信任这些请求头作为已登录的管理员（admin）。
 
-服务遵循 HOLDFAST 共享模板：Rust + axum、async-trait 的 Postgres 存储层（内存 + PgStore，运行期
-SQL、无编译期宏、无 `block_in_place`）、独立数据库 `sanctum`、幂等迁移、企业级 HOLDFAST UI、POST
+服务遵循 Steadholme 共享模板：Rust + axum、async-trait 的 Postgres 存储层（内存 + PgStore，运行期
+SQL、无编译期宏、无 `block_in_place`）、独立数据库 `sanctum`、幂等迁移、企业级 Steadholme UI、POST
 接口的 CSRF 防护、对所有不可信内容做转义、`healthcheck` 子命令、多阶段非 root 镜像、`GET /healthz`
 存活探针。
 

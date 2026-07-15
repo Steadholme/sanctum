@@ -1,4 +1,4 @@
-//! Sanctum — personal secrets vault for the HOLDFAST stack.
+//! Sanctum — personal secrets vault for the Steadholme stack.
 //!
 //! Library root: defines [`AppState`], wires the routes via [`app`], and provides
 //! [`build_dev_state`] (in-memory store + dev master key, no database) and

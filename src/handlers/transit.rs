@@ -1,7 +1,7 @@
 //! Internal transit API: `POST /transit/encrypt` and `POST /transit/decrypt`.
 //!
 //! These are JSON, service-to-service endpoints (NOT browser pages), so they render compact JSON
-//! envelopes and JSON errors — never the HTML error page. They let OTHER HOLDFAST services encrypt
+//! envelopes and JSON errors — never the HTML error page. They let OTHER Steadholme services encrypt
 //! /decrypt payloads under a NAMED transit key WITHOUT holding the master key themselves.
 //!
 //! Authorization (see [`crate::auth::transit_authorized`]) accepts EITHER the gateway-injected SSO

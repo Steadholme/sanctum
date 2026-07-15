@@ -5,7 +5,7 @@
 //! - [`transit`] — the internal transit API (`/transit/encrypt`, `/transit/decrypt`).
 //!
 //! The shared design tokens / CSS are embedded (via `include_str!`) and inlined into every page,
-//! matching the HOLDFAST enterprise brand: brand gradient, indigo accent, cards, buttons, the
+//! matching the Steadholme enterprise brand: brand gradient, indigo accent, cards, buttons, the
 //! app-bar with the shield + wordmark + signed-in email + gateway logout. Every secret PATH /
 //! version metadata is HTML-escaped on render; a revealed VALUE is only ever placed into a
 //! data-attribute and unmasked client-side on an explicit click (never auto-shown).
@@ -37,7 +37,7 @@ pub fn app_css() -> &'static str {
         .as_str()
 }
 
-/// The HOLDFAST shield glyph (small, for the app-bar brand lockup).
+/// The Steadholme shield glyph (small, for the app-bar brand lockup).
 pub const SHIELD_SVG: &str = odyssey::HOLDFAST_MARK_SVG;
 
 /// Cross-subdomain SSO logout (terminated at the Keystone IdP behind the gateway).

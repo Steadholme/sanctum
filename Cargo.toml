@@ -2,7 +2,7 @@
 name = "sanctum"
 version = "0.1.0"
 edition = "2021"
-description = "Sanctum — personal secrets vault for the HOLDFAST stack (SSO-gated management UI + an internal transit API; values AES-256-GCM at rest)."
+description = "Sanctum — personal secrets vault for the Steadholme stack (SSO-gated management UI + an internal transit API; values AES-256-GCM at rest)."
 license = "MIT OR Apache-2.0"
 
 [lib]
