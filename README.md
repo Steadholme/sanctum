@@ -117,8 +117,8 @@ docker rm -f sanctum-testpg
 ## 构建镜像
 
 ```bash
-docker build -t holdfast/sanctum:dev .
-docker run --rm -p 127.0.0.1:8990:8990 holdfast/sanctum:dev
+docker build -t steadholme/sanctum:dev .
+docker run --rm -p 127.0.0.1:8990:8990 steadholme/sanctum:dev
 curl -s http://127.0.0.1:8990/healthz   # -> ok
 ```
 
