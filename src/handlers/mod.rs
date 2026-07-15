@@ -38,7 +38,7 @@ pub fn app_css() -> &'static str {
 }
 
 /// The Steadholme shield glyph (small, for the app-bar brand lockup).
-pub const SHIELD_SVG: &str = odyssey::HOLDFAST_MARK_SVG;
+pub const SHIELD_SVG: &str = odyssey::STEADHOLME_MARK_SVG;
 
 /// Cross-subdomain SSO logout (terminated at the Keystone IdP behind the gateway).
 pub const LOGOUT_URL: &str = "https://sso.w33d.xyz/_gw/auth/logout";
