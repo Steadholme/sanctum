@@ -22,7 +22,7 @@ use crate::audit::AuditEvent;
 use crate::auth::{self, Identity};
 use crate::config::{MAX_PATH_CHARS, MAX_VALUE_CHARS};
 use crate::error::AppError;
-use crate::handlers::{app_css, esc, fmt_ts, pct_encode, userbox, SHIELD_SVG};
+use crate::handlers::{esc, fmt_ts, pct_encode, shell, theme_of};
 use crate::model::{SecretLifecycle, SecretMeta, SecretReadPolicy, SecretVersion, VersionInfo};
 use crate::{now_secs, AppState};
 
@@ -51,7 +51,15 @@ pub async fn index(
     let lifecycles = state.store.list_lifecycle().await?;
     let policies = state.store.list_read_policies().await?;
     let now = now_secs();
-    let html = render_index(&who, &csrf, &secrets, &lifecycles, &policies, now);
+    let html = render_index(
+        &who,
+        theme_of(&headers),
+        &csrf,
+        &secrets,
+        &lifecycles,
+        &policies,
+        now,
+    );
     Ok(html_with_csrf(StatusCode::OK, html, &csrf))
 }
 
@@ -194,6 +202,7 @@ pub async fn reveal(
         let csrf = auth::new_csrf_token();
         let html = render_detail(
             &who,
+            theme_of(&headers),
             &csrf,
             &path,
             &latest,
@@ -219,6 +228,7 @@ pub async fn reveal(
     let csrf = auth::new_csrf_token();
     let html = render_detail(
         &who,
+        theme_of(&headers),
         &csrf,
         &path,
         &latest,
@@ -283,7 +293,7 @@ pub async fn reveal_version(
     ));
 
     let csrf = auth::new_csrf_token();
-    let html = render_reveal_version(&who, &csrf, &path, &row, &value);
+    let html = render_reveal_version(&who, theme_of(&headers), &csrf, &path, &row, &value);
     Ok(html_with_csrf(StatusCode::OK, html, &csrf))
 }
 
@@ -643,6 +653,7 @@ fn redirect_found(location: &str) -> Response {
 
 fn render_index(
     who: &Identity,
+    theme: &str,
     csrf: &str,
     secrets: &[SecretMeta],
     lifecycles: &[SecretLifecycle],
@@ -653,10 +664,58 @@ fn render_index(
         1 => "1 secret".to_string(),
         n => format!("{n} secrets"),
     };
-    INDEX_HTML
-        .replace("{{CSS}}", app_css())
-        .replace("{{SHIELD}}", SHIELD_SVG)
-        .replace("{{USERBOX}}", &userbox("Vault", Some(&who.email)))
+    let expiring = secrets
+        .iter()
+        .filter(|m| {
+            lifecycle_for(lifecycles, &m.path)
+                .and_then(|l| l.expires_at)
+                .is_some_and(|at| at > now && at <= now + DUE_HORIZON_SECS)
+        })
+        .count();
+    let expired = secrets
+        .iter()
+        .filter(|m| {
+            lifecycle_for(lifecycles, &m.path)
+                .and_then(|l| l.expires_at)
+                .is_some_and(|at| at <= now)
+        })
+        .count();
+    let rotation_due = secrets
+        .iter()
+        .filter(|m| {
+            lifecycle_for(lifecycles, &m.path).is_some_and(|l| {
+                l.rotation_state == "rotation_due"
+                    || l.rotation_due_at.is_some_and(|at| at <= now)
+            })
+        })
+        .count();
+    let versions: i64 = secrets.iter().map(|m| m.latest_version).sum();
+    let head_sub = format!(
+        "{count} · {versions} versions · AES-256-GCM at rest · values never appear in the list",
+        versions = versions,
+    );
+    let tiles = format!(
+        r##"<section class="tiles">
+  <div class="tile"><span class="tile__value">{secrets}</span><span class="tile__label">secrets</span></div>
+  <div class="tile{expiring_class}"><span class="tile__value">{expiring}</span><span class="tile__label">expiring · 14 d</span></div>
+  <div class="tile{expired_class}"><span class="tile__value">{expired}</span><span class="tile__label">expired</span></div>
+  <div class="tile{rotation_class}"><span class="tile__value">{rotation_due}</span><span class="tile__label">rotation due</span></div>
+  <div class="tile"><span class="tile__value">{versions}</span><span class="tile__label">versions</span></div>
+  <div class="tile tile--mark"><span class="tile__value">{policies}</span><span class="tile__label">read policies</span></div>
+</section>"##,
+        secrets = secrets.len(),
+        expiring = expiring,
+        expiring_class = if expiring > 0 { " tile--due" } else { "" },
+        expired = expired,
+        expired_class = if expired > 0 { " tile--gone" } else { "" },
+        rotation_due = rotation_due,
+        rotation_class = if rotation_due > 0 { " tile--due" } else { "" },
+        versions = versions,
+        policies = policies.len(),
+    );
+    shell(INDEX_HTML, "/", theme, Some(&who.email))
+        .replace("{{HEAD_SUB}}", &esc(&head_sub))
+        .replace("{{TILES}}", &tiles)
         .replace("{{CSRF}}", &esc(csrf))
         .replace("{{COUNT}}", &esc(&count))
         .replace("{{LIST}}", &render_secret_list(secrets, lifecycles, now))
@@ -844,6 +903,7 @@ fn lifecycle_rotation_state(lifecycle: Option<&SecretLifecycle>) -> &str {
 
 fn render_detail(
     who: &Identity,
+    theme: &str,
     csrf: &str,
     path: &str,
     latest: &SecretVersion,
@@ -857,10 +917,7 @@ fn render_detail(
         Some(v) => render_value_block_live(v),
         None => EXPIRED_VALUE_BLOCK.to_string(),
     };
-    SECRET_HTML
-        .replace("{{CSS}}", app_css())
-        .replace("{{SHIELD}}", SHIELD_SVG)
-        .replace("{{USERBOX}}", &userbox("Vault", Some(&who.email)))
+    shell(SECRET_HTML, "/", theme, Some(&who.email))
         .replace("{{CSRF}}", &esc(csrf))
         // PATH_ENC is used inside double-quoted href/action attributes; esc() neutralizes quotes.
         .replace("{{PATH_ENC}}", &esc(&enc))
@@ -945,16 +1002,14 @@ fn render_history(path: &str, history: &[VersionInfo], csrf: &str) -> String {
 
 fn render_reveal_version(
     who: &Identity,
+    theme: &str,
     _csrf: &str,
     path: &str,
     row: &SecretVersion,
     value: &str,
 ) -> String {
     let enc = pct_encode(path);
-    REVEAL_HTML
-        .replace("{{CSS}}", app_css())
-        .replace("{{SHIELD}}", SHIELD_SVG)
-        .replace("{{USERBOX}}", &userbox("Vault", Some(&who.email)))
+    shell(REVEAL_HTML, "/", theme, Some(&who.email))
         .replace("{{PATH_ENC}}", &esc(&enc))
         .replace("{{PATH}}", &esc(path))
         .replace("{{VERSION}}", &row.version.to_string())

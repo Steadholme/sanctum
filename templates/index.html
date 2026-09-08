@@ -1,53 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{{THEME_ATTR}}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="{{COLOR_SCHEME}}">
   <title>Vault · Sanctum · Steadholme</title>
-  <style>{{CSS}}</style>
+  <link rel="stylesheet" href="{{CSS_PATH}}">
 </head>
-<body class="page-console">
-  <header class="topbar">
-    <div class="topbar__inner">
-      <a class="brand" href="/" aria-label="Steadholme Sanctum">
-        <span class="brand__glyph" aria-hidden="true">{{SHIELD}}</span>
-        <span class="brand__word">Steadholme</span>
-      </a>
-      <div class="topbar__right">{{USERBOX}}</div>
+<body class="page-v2">
+{{APPBAR}}
+<main class="v2-page">
+  <header class="pagehead">
+    <div class="pagehead__titles">
+      <h1>Secrets vault</h1>
+      <p class="pagehead__sub">{{HEAD_SUB}}</p>
     </div>
   </header>
 
-  <main class="console">
-    <div class="console__head">
-      <h1>Secrets vault</h1>
-      <p class="sub">Store secrets encrypted at rest with AES-256-GCM. The list never shows values — open a secret to reveal it (revealing is recorded in the audit log).</p>
-    </div>
+  {{TILES}}
 
-    <div class="layout">
-      <section class="reading">
+  <div class="two-col">
+    <div class="two-col__main">
         <div class="card">
-          <div class="card__head"><h2>Secrets</h2><span class="muted">{{COUNT}}</span></div>
+          <div class="card__head"><h2>Secrets</h2><span class="card__count">{{COUNT}}</span></div>
           <ul class="secret-list">
             {{LIST}}
           </ul>
         </div>
 
         <div class="card">
-          <div class="card__head"><h2>Expiry &amp; rotation</h2><span class="muted">next 14 days</span></div>
-          <div class="card__body">
-            <ul class="version-list">
-              {{DUE_LIST}}
-            </ul>
-          </div>
+          <div class="card__head"><h2>Expiry &amp; rotation</h2><span class="card__count">next 14 days</span></div>
+          <ul class="version-list">
+            {{DUE_LIST}}
+          </ul>
         </div>
-      </section>
+    </div>
 
-      <aside class="rail">
+    <aside class="two-col__rail">
         <section class="card">
           <div class="card__head"><h2>New secret</h2></div>
-          <div class="card__body">
-            <form method="post" action="/" class="save-form">
+          <div class="card__pad">
+            <form method="post" action="/" class="form-stack">
               <input type="hidden" name="csrf_token" value="{{CSRF}}">
               <div class="field">
                 <label for="path">Path</label>
@@ -69,8 +62,8 @@
 
         <section class="card">
           <div class="card__head"><h2>Read policies</h2></div>
-          <div class="card__body">
-            <form method="post" action="/policies" class="save-form">
+          <div class="card__pad">
+            <form method="post" action="/policies" class="form-stack">
               <input type="hidden" name="csrf_token" value="{{CSRF}}">
               <div class="field">
                 <label for="policy-subject">Subject</label>
@@ -91,8 +84,9 @@
             </ul>
           </div>
         </section>
-      </aside>
-    </div>
-  </main>
+    </aside>
+  </div>
+{{FOOTER}}
+</main>
 </body>
 </html>

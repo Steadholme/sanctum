@@ -208,6 +208,8 @@ async fn create_reveal_version_delete_lifecycle() {
     assert_eq!(home.status, StatusCode::OK);
     assert!(home.body.contains("Secrets vault"));
     assert!(home.body.contains("No secrets yet"));
+    assert!(home.body.contains(r#"href="/assets/sanctum-20260908.css""#));
+    assert!(!home.body.contains("<style>"));
     let csrf = home.csrf_cookie().expect("csrf on GET /");
 
     // POST / creates v1 -> 302 to the detail page.
@@ -655,4 +657,25 @@ async fn healthz_is_public() {
     let r = send(&app, get("/healthz", None)).await;
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.body, "ok");
+}
+
+#[tokio::test]
+async fn stylesheet_is_public_immutable_and_typed() {
+    let response = send(&app(state()), get("/assets/sanctum-20260908.css", None)).await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(
+        response.headers.get(header::CONTENT_TYPE).unwrap(),
+        "text/css; charset=utf-8"
+    );
+    assert_eq!(
+        response.headers.get(header::CACHE_CONTROL).unwrap(),
+        "public, max-age=31536000, immutable"
+    );
+    assert_eq!(
+        response
+            .headers
+            .get(header::X_CONTENT_TYPE_OPTIONS)
+            .unwrap(),
+        "nosniff"
+    );
 }

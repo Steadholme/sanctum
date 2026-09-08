@@ -131,3 +131,14 @@ curl -s http://127.0.0.1:8990/healthz   # -> ok
 - **额外环境变量**：`MASTER_KEY`（必填）、`SANCTUM_STORE=postgres`、`DATABASE_URL`（指向 `sanctum` 库）、
   `AUDIT_ENABLED=on` + `WATCHTOWER_URL=http://watchtower:8500` + `AUDIT_INGEST_TOKEN`；可选
   `TRANSIT_TOKEN`（供服务到服务 transit 调用）。
+
+## 前端 v2（2026-09-08）
+
+三个页面（vault / secret / reveal）与错误页按 Figma 文件 `oQSDMcyZmU5LT1qmb8zzyS`
+（Sanctum，gold accent）换到共享的 Steadholme v2 视觉系统：应用栏（Vault / Transit / Audit
+＋ `sealed · master key loaded`）、六块摘要瓦片（secrets / expiring / expired / rotation due /
+versions / read policies）、密钥列表（路径 mono、版本徽章、生命周期徽章、遮罩点阵、Open）、
+到期与轮换列表、新建密钥与读策略表单、页脚同产品线链接。
+
+样式在 `static/service.css`，与 Odyssey 基底层叠后由 `/assets/sanctum-20260908.css` 以不可变
+缓存提供；改样式时同步提升该路径里的日期（测试会断言路径）。
