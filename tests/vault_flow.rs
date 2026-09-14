@@ -29,6 +29,19 @@ fn state() -> AppState {
     }
 }
 
+/// Like [`state`], but names `subject` as a vault operator so it can manage read policies.
+fn operator_state(subject: &str) -> AppState {
+    let mut config = Config::dev();
+    config.transit_token = Some(TRANSIT_TOKEN.to_string());
+    config.admin_subjects = vec![subject.to_string()];
+    AppState {
+        config: Arc::new(config),
+        store: Arc::new(InMemoryStore::new()),
+        cipher: Arc::new(Cipher::new(DEV_MASTER_KEY)),
+        audit: AuditSink::disabled(),
+    }
+}
+
 // ---- request helpers ------------------------------------------------------
 
 struct Resp {
@@ -518,7 +531,9 @@ async fn invalid_paths_are_rejected() {
 
 #[tokio::test]
 async fn read_policies_filter_list_and_reject_reveal() {
-    let app = app(state());
+    // alice is a vault operator here: managing the read ACL is an operator action, so the
+    // generic `state()` (which names only the dev subject) cannot drive this flow.
+    let app = app(operator_state("alice"));
     let path = "db/prod/password";
     let enc_path = enc(path);
 
@@ -788,4 +803,51 @@ async fn transit_bearer_still_works_under_enforcement() {
     )
     .await;
     assert_eq!(unauthenticated.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn non_operator_cannot_grant_itself_read_access() {
+    // Deny-by-default is only meaningful if the ACL itself is not writable by whoever it denies.
+    // Before this was gated, mallory could POST /policies granting herself "*" and then read
+    // every secret in the vault.
+    let app = app(operator_state("alice"));
+    let home = send(&app, get("/", Some("mallory"))).await;
+    let csrf = home.csrf_cookie().expect("csrf on GET /");
+    let grant = send(
+        &app,
+        post_form(
+            "/policies",
+            &[
+                ("csrf_token", &csrf),
+                ("subject", "mallory"),
+                ("path_prefix", "*"),
+            ],
+            &csrf,
+            Some("mallory"),
+        ),
+    )
+    .await;
+    assert_eq!(grant.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn non_operator_cannot_delete_a_read_policy() {
+    let app = app(operator_state("alice"));
+    let home = send(&app, get("/", Some("mallory"))).await;
+    let csrf = home.csrf_cookie().expect("csrf on GET /");
+    let removed = send(
+        &app,
+        post_form(
+            "/policies/delete",
+            &[
+                ("csrf_token", &csrf),
+                ("subject", "alice"),
+                ("path_prefix", "db/prod"),
+            ],
+            &csrf,
+            Some("mallory"),
+        ),
+    )
+    .await;
+    assert_eq!(removed.status, StatusCode::FORBIDDEN);
 }

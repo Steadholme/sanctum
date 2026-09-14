@@ -123,6 +123,7 @@ pub async fn add_policy(
 ) -> Result<Response, AppError> {
     require_csrf(&headers, &form.csrf_token)?;
     let who = auth::identity(&headers);
+    require_operator(&state, &who)?;
     let subject = validate_subject(&form.subject)?;
     let path_prefix = validate_policy_prefix(&form.path_prefix)?;
     state
@@ -150,6 +151,7 @@ pub async fn delete_policy(
 ) -> Result<Response, AppError> {
     require_csrf(&headers, &form.csrf_token)?;
     let who = auth::identity(&headers);
+    require_operator(&state, &who)?;
     let subject = validate_subject(&form.subject)?;
     let path_prefix = validate_policy_prefix(&form.path_prefix)?;
     state
@@ -475,6 +477,29 @@ async fn readable_secrets(state: &AppState, who: &Identity) -> Result<Vec<Secret
         }
     }
     Ok(out)
+}
+
+/// Only vault operators may change who can read what. Without this, deny-by-default is
+/// decorative: any authenticated subject could POST `/policies` granting themselves `*` and read
+/// every secret. Operators are named in `SANCTUM_ADMIN_SUBJECTS`.
+fn require_operator(state: &AppState, who: &Identity) -> Result<(), AppError> {
+    if state
+        .config
+        .admin_subjects
+        .iter()
+        .any(|s| s == &who.subject)
+    {
+        return Ok(());
+    }
+    state.audit.emit(AuditEvent::warning(
+        "secret.policy.denied",
+        &who.email,
+        "policies",
+        "not a vault operator",
+    ));
+    Err(AppError::Forbidden(
+        "Only a vault operator can change read policies.".to_string(),
+    ))
 }
 
 async fn require_read_path(state: &AppState, who: &Identity, path: &str) -> Result<(), AppError> {
