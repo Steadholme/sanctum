@@ -58,7 +58,12 @@ pub async fn encrypt(
     headers: HeaderMap,
     Json(req): Json<EncryptReq>,
 ) -> Response {
-    if !auth::transit_authorized(&headers, state.config.transit_token.as_deref()) {
+    if !auth::transit_authorized(
+        &headers,
+        state.config.transit_token.as_deref(),
+        state.config.gateway_hmac_key.as_deref(),
+        state.config.enforce_gateway_signature,
+    ) {
         return json_err(StatusCode::UNAUTHORIZED, "unauthorized");
     }
     let key = req
@@ -77,7 +82,12 @@ pub async fn decrypt(
     headers: HeaderMap,
     Json(req): Json<DecryptReq>,
 ) -> Response {
-    if !auth::transit_authorized(&headers, state.config.transit_token.as_deref()) {
+    if !auth::transit_authorized(
+        &headers,
+        state.config.transit_token.as_deref(),
+        state.config.gateway_hmac_key.as_deref(),
+        state.config.enforce_gateway_signature,
+    ) {
         return json_err(StatusCode::UNAUTHORIZED, "unauthorized");
     }
     match state.cipher.transit_decrypt(req.ciphertext.trim()) {

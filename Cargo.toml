@@ -45,6 +45,7 @@ aes-gcm = "0.10"
 # Key derivation from MASTER_KEY (SHA-256 of a domain-separated context || master) + base64 for
 # the on-disk nonce||ciphertext blob. base64 0.22 matches keystone/corvid.
 sha2 = "0.10"
+hmac = "0.12"
 base64 = "0.22"
 # Portable PostgreSQL data layer. Runtime queries only (sqlx::query/Row) — NO compile-time
 # macros, so the build needs NO database. rustls TLS (ring) — no openssl. The same standard SQL

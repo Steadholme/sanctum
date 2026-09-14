@@ -60,9 +60,11 @@ pub struct AppState {
 /// Build the router wiring all endpoints onto `state`. Routes are explicit (no fallback): the
 /// service owns its subdomain, so Sluice forwards these exact paths.
 pub fn app(state: AppState) -> Router {
-    Router::new()
-        .route("/healthz", get(handlers::health::healthz))
-        .route(handlers::APP_CSS_PATH, get(handlers::app_css_asset))
+    // Everything that renders or mutates secrets sits behind ONE enforcement point, so a route
+    // added later cannot forget the check. `/healthz` stays open for the container probe,
+    // the stylesheet is public, and `/transit/*` is a service-to-service API that arrives with a
+    // bearer token instead of a browser session — it does its own check in the handler.
+    let guarded = Router::new()
         .route(
             "/",
             get(handlers::secrets::index).post(handlers::secrets::create),
@@ -83,8 +85,17 @@ pub fn app(state: AppState) -> Router {
             "/s/{path}/v/{version}/rollback",
             post(handlers::secrets::rollback),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_signed_identity,
+        ));
+
+    Router::new()
+        .route("/healthz", get(handlers::health::healthz))
+        .route(handlers::APP_CSS_PATH, get(handlers::app_css_asset))
         .route("/transit/encrypt", post(handlers::transit::encrypt))
         .route("/transit/decrypt", post(handlers::transit::decrypt))
+        .merge(guarded)
         .with_state(state)
 }
 

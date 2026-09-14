@@ -1045,6 +1045,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
+ "hmac",
  "odyssey",
  "rand",
  "serde",

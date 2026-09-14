@@ -33,6 +33,15 @@ pub struct Config {
     /// `/transit/*` endpoints for in-network service-to-service callers (no SSO). `None` => only
     /// the gateway-injected SSO identity authorizes transit.
     pub transit_token: Option<String>,
+    /// Shared secret Sluice uses to sign the injected identity (`X-Auth-Sig`). Without it the
+    /// service cannot tell a gateway-minted identity from a forged one.
+    pub gateway_hmac_key: Option<String>,
+    /// Subjects that may read any secret path. The vault's operators. Empty means nobody, which
+    /// is deliberate: the read ACL is deny-by-default.
+    pub admin_subjects: Vec<String>,
+    /// Reject any request whose injected identity is unsigned. Defaults ON for the postgres
+    /// store (i.e. production) and OFF for the in-memory store (local run + tests).
+    pub enforce_gateway_signature: bool,
 }
 
 impl Config {
@@ -43,6 +52,13 @@ impl Config {
             public_base_url: DEFAULT_PUBLIC_BASE_URL.to_string(),
             default_transit_key: DEFAULT_TRANSIT_KEY.to_string(),
             transit_token: None,
+            gateway_hmac_key: None,
+            // Local runs and the DB-free test suite have no gateway and no policy rows, so the
+            // dev identity is an operator. `from_env` ALWAYS overwrites this from
+            // SANCTUM_ADMIN_SUBJECTS (empty when unset), so it can never leak into production.
+            admin_subjects: vec![crate::auth::DEV_SUBJECT.to_string()],
+            // Local/dev runs and the DB-free test suite have no gateway in front of them.
+            enforce_gateway_signature: false,
         }
     }
 
@@ -59,6 +75,22 @@ impl Config {
             config.default_transit_key = v;
         }
         config.transit_token = env_nonempty("TRANSIT_TOKEN");
+        config.gateway_hmac_key = env_nonempty("GATEWAY_HMAC_KEY");
+        config.admin_subjects = env_nonempty("SANCTUM_ADMIN_SUBJECTS")
+            .map(|raw| {
+                raw.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        // Production is the postgres store. Anything else is a local run or a test.
+        let is_prod = env_nonempty("SANCTUM_STORE").as_deref() == Some("postgres");
+        config.enforce_gateway_signature = match env_nonempty("SANCTUM_ENFORCE_GATEWAY_SIG") {
+            Some(v) => matches!(v.trim(), "1" | "true" | "TRUE" | "yes"),
+            None => is_prod,
+        };
         config
     }
 }

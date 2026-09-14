@@ -325,8 +325,12 @@ async fn create_reveal_version_delete_lifecycle() {
     .await;
     assert_eq!(del.status, StatusCode::FOUND);
     assert_eq!(del.location(), "/");
+    // Once deleted, alice no longer owns the path and no policy covers it, so the read is
+    // refused before the lookup happens. Denying uniformly (rather than 404) is deliberate:
+    // answering "not found" to an unauthorized reader turns the vault into an existence oracle
+    // for secret paths.
     let gone = send(&app, get(&format!("/s/{enc_path}"), Some("alice"))).await;
-    assert_eq!(gone.status, StatusCode::NOT_FOUND);
+    assert_eq!(gone.status, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
@@ -573,8 +577,12 @@ async fn read_policies_filter_list_and_reject_reveal() {
     )
     .await;
     assert_eq!(removed.status, StatusCode::FOUND);
+    // Emptying the policy table must NOT re-open the vault. This assertion used to expect 200,
+    // which is the 2026-09-14 audit's critical finding stated as a test: an empty ACL meant
+    // "allow everyone", and the production table was in fact empty. Bob owns nothing here and
+    // holds no policy, so he stays denied.
     let bob_after_remove = send(&app, get(&format!("/s/{enc_path}"), Some("bob"))).await;
-    assert_eq!(bob_after_remove.status, StatusCode::OK);
+    assert_eq!(bob_after_remove.status, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
@@ -678,4 +686,106 @@ async fn stylesheet_is_public_immutable_and_typed() {
             .unwrap(),
         "nosniff"
     );
+}
+
+// ---- gateway identity enforcement ----------------------------------------
+//
+// The 2026-09-14 audit's top finding: Sanctum listens on an internal network, trusts
+// `X-Auth-Subject` with no signature check, and falls back to `dev-user` when the header is
+// absent. Any container on a shared docker network could therefore mint an authenticated
+// session. These tests drive the real router to prove the middleware is wired to the guarded
+// routes, not merely that the verifier function works in isolation.
+
+const GW_KEY: &str = "gateway-test-key";
+
+fn enforcing_state() -> AppState {
+    let mut config = Config::dev();
+    config.transit_token = Some(TRANSIT_TOKEN.to_string());
+    config.gateway_hmac_key = Some(GW_KEY.to_string());
+    config.enforce_gateway_signature = true;
+    config.admin_subjects = vec!["alice".to_string()];
+    AppState {
+        config: Arc::new(config),
+        store: Arc::new(InMemoryStore::new()),
+        cipher: Arc::new(Cipher::new(DEV_MASTER_KEY)),
+        audit: AuditSink::disabled(),
+    }
+}
+
+fn signed_get(path: &str, subject: &str) -> Request<Body> {
+    let window = sanctum::auth::now_unix() / 60;
+    Request::builder()
+        .method("GET")
+        .uri(path)
+        .header("x-auth-subject", subject)
+        .header("x-auth-email", format!("{subject}@w33d.xyz"))
+        .header(
+            "x-auth-sig",
+            sanctum::auth::sign_identity(GW_KEY, subject, "", window),
+        )
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn forged_subject_without_signature_is_refused() {
+    let app = app(enforcing_state());
+    let forged = send(&app, get("/", Some("alice"))).await;
+    assert_eq!(forged.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn missing_identity_does_not_fall_back_to_dev_user() {
+    let app = app(enforcing_state());
+    let anonymous = send(&app, get("/", None)).await;
+    assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn tampered_signature_is_refused() {
+    let app = app(enforcing_state());
+    let mut req = signed_get("/", "alice");
+    // Re-sign as a different subject: the signature is valid for "bob", so a header swap must
+    // not carry it over to "alice".
+    let window = sanctum::auth::now_unix() / 60;
+    req.headers_mut().insert(
+        "x-auth-sig",
+        sanctum::auth::sign_identity(GW_KEY, "bob", "", window)
+            .parse()
+            .unwrap(),
+    );
+    let resp = send(&app, req).await;
+    assert_eq!(resp.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn correctly_signed_identity_is_admitted() {
+    let app = app(enforcing_state());
+    let ok = send(&app, signed_get("/", "alice")).await;
+    assert_eq!(ok.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn healthz_stays_reachable_without_an_identity() {
+    let app = app(enforcing_state());
+    let health = send(&app, get("/healthz", None)).await;
+    assert_eq!(health.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn transit_bearer_still_works_under_enforcement() {
+    // Transit is service-to-service and never carries a gateway signature, so it is deliberately
+    // outside the guarded router. It must still require its bearer token.
+    let app = app(enforcing_state());
+    let unauthenticated = send(
+        &app,
+        Request::builder()
+            .method("POST")
+            .uri("/transit/encrypt")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{\"plaintext\":\"hello\"}"))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(unauthenticated.status, StatusCode::UNAUTHORIZED);
 }

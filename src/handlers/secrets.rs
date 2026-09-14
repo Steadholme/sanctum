@@ -478,6 +478,16 @@ async fn readable_secrets(state: &AppState, who: &Identity) -> Result<Vec<Secret
 }
 
 async fn require_read_path(state: &AppState, who: &Identity, path: &str) -> Result<(), AppError> {
+    // Vault operators are named explicitly in configuration. This is what keeps deny-by-default
+    // from locking the owner out of their own vault when the policy table is empty.
+    if state
+        .config
+        .admin_subjects
+        .iter()
+        .any(|s| s == &who.subject)
+    {
+        return Ok(());
+    }
     if state.store.can_read_secret(&who.subject, path).await? {
         return Ok(());
     }
@@ -684,8 +694,7 @@ fn render_index(
         .iter()
         .filter(|m| {
             lifecycle_for(lifecycles, &m.path).is_some_and(|l| {
-                l.rotation_state == "rotation_due"
-                    || l.rotation_due_at.is_some_and(|at| at <= now)
+                l.rotation_state == "rotation_due" || l.rotation_due_at.is_some_and(|at| at <= now)
             })
         })
         .count();

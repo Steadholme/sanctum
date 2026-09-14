@@ -157,11 +157,25 @@ impl InMemoryStore {
             })
     }
 
+    /// Deny by default. An empty policy set used to mean "allow everyone" — for a secrets vault
+    /// that inverts the safe default, and in production the table WAS empty (2026-09-14 audit).
+    /// Vault operators are granted separately via `SANCTUM_ADMIN_SUBJECTS`, not by leaving the
+    /// ACL empty.
+    /// Whoever wrote a secret can read it back. Deny-by-default is aimed at *other* subjects;
+    /// without this the author of a secret would be locked out of it until an operator wrote a
+    /// policy, which is not how a vault is expected to behave.
+    fn subject_created_path(&self, subject: &str, path: &str) -> bool {
+        self.versions
+            .lock()
+            .expect("versions lock poisoned")
+            .iter()
+            .any(|v| v.path == path && v.created_by == subject)
+    }
+
     fn policy_allows(policies: &[SecretReadPolicy], subject: &str, path: &str) -> bool {
-        policies.is_empty()
-            || policies
-                .iter()
-                .any(|p| p.subject == subject && path_matches_prefix(path, &p.path_prefix))
+        policies
+            .iter()
+            .any(|p| p.subject == subject && path_matches_prefix(path, &p.path_prefix))
     }
 }
 
@@ -376,6 +390,9 @@ impl Store for InMemoryStore {
     }
 
     async fn can_read_secret(&self, subject: &str, path: &str) -> Result<bool, StoreError> {
+        if self.subject_created_path(subject, path) {
+            return Ok(true);
+        }
         let policies = self
             .read_policies
             .lock()
@@ -774,10 +791,16 @@ impl PgStore {
     }
 
     async fn can_read_secret_async(&self, subject: &str, path: &str) -> Result<bool, sqlx::Error> {
-        let total: i64 = sqlx::query_scalar("SELECT count(*) FROM secret_read_policies")
-            .fetch_one(&self.pool)
-            .await?;
-        if total == 0 {
+        // Deny by default: no matching policy means no read. The previous "empty table allows
+        // everyone" shortcut made the live vault readable by anyone who reached it.
+        // Ownership first: whoever wrote the secret can read it back (see the in-memory twin).
+        let owned: Option<(i64,)> =
+            sqlx::query_as("SELECT COUNT(*) FROM secrets WHERE path = $1 AND created_by = $2")
+                .bind(path)
+                .bind(subject)
+                .fetch_optional(&self.pool)
+                .await?;
+        if owned.map(|(n,)| n > 0).unwrap_or(false) {
             return Ok(true);
         }
         let rows = sqlx::query("SELECT path_prefix FROM secret_read_policies WHERE subject = $1")
@@ -1050,9 +1073,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_policies_default_allow_then_restrict_by_prefix() {
+    async fn read_policies_default_deny_then_grant_by_prefix() {
         let s = InMemoryStore::new();
-        assert!(s.can_read_secret("alice", "db/prod/pw").await.unwrap());
+        // Deny by default. The empty policy set used to allow everyone, which is how the live
+        // vault ended up readable by any peer that reached it (2026-09-14 audit).
+        assert!(!s.can_read_secret("alice", "db/prod/pw").await.unwrap());
 
         s.put_read_policy("alice", "db/prod", "admin", 10)
             .await
