@@ -31,6 +31,33 @@ async fn main() {
         .parse()
         .expect("invalid bind_addr in config");
 
+    // Make the security posture visible at boot. Enforcement failing closed is a loud failure
+    // (everything 401s), but an explicit SANCTUM_ENFORCE_GATEWAY_SIG=0 would otherwise downgrade
+    // the vault silently.
+    if state.config.enforce_gateway_signature {
+        tracing::info!(
+            operators = state.config.admin_subjects.len(),
+            "gateway identity signature ENFORCED; secret reads deny-by-default"
+        );
+        if state.config.gateway_hmac_key.is_none() {
+            tracing::error!(
+                "GATEWAY_HMAC_KEY is not set while enforcement is on — every request will be \
+                 rejected. Set it to the same key Sluice signs with."
+            );
+        }
+        if state.config.admin_subjects.is_empty() {
+            tracing::warn!(
+                "SANCTUM_ADMIN_SUBJECTS is empty — nobody can manage the read ACL, and only a \
+                 secret's own author can read it."
+            );
+        }
+    } else {
+        tracing::warn!(
+            "gateway identity signature NOT enforced — X-Auth-Subject is trusted unverified. \
+             This is intended for local runs only."
+        );
+    }
+
     let app = sanctum::app(state);
 
     let listener = tokio::net::TcpListener::bind(addr)
